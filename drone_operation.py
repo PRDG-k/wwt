@@ -7,14 +7,14 @@ import json
 model = gp.Model("drone_operation")
 seed = random.seed(42)
 
-# 데이터/파라미터 초기화
+# 데이터/파라미터 초기화        
 T = 100
-N = 50
+N = 30
 u = 0
 e_consumption = 10
 bandwidth = 10
 distance = [[random.randint(5, 9) for _ in range(N)] for _ in range(N)]
-drone_capa = 100
+drone_capa = 100000
 
 # 변수 생성
 x = model.addVars(N,N,T,vtype=GRB.BINARY, name="x")
@@ -31,19 +31,22 @@ consumption = model.addVars(T,vtype=GRB.CONTINUOUS,name='consumption')
 model.setObjective(gp.quicksum(distance[i][j] *  x[i,j,t] for i in range(N) for j in range(N) for t in range(T)), sense=GRB.MINIMIZE)
 
 # 제약 조건 추가
+# 출발점
+model.addConstr(gp.quicksum(x[u,i,0] for i in range(1,N)) == 1)
+
 for t in range(1, T):
     model.addConstr(m[t] + c[t] <= 1, 'status_constr')                  # c1
 
     model.addConstr(level[t] <= battery[t], 'return_constr')            # c2
     # model.addConstr(level[t] == distance[node[t]][u] * e_consumption)   # c2
-    model.addConstr(level[t] == gp.quicksum(distance[i][j] * x[i,j,t] for i in range(N) for j in range(N)) * e_consumption)   # c2
+    model.addConstr(level[t] == gp.quicksum(distance[j][u] * x[i,j,t] for i in range(N) for j in range(N)) * e_consumption)   # c2
 
     model.addConstr(charge[t] <= bandwidth * c[t])                      # c3
     model.addConstr(consumption[t] == e_consumption * m[t])             # c3
 
     model.addConstr(battery[t] <= battery[t-1] + charge[t] - consumption[t]) # c3
     
-    model.addConstr(gp.quicksum(x[i,j,t] for i in range(N) for j in range(N)) == m[t])              # c4
+    model.addConstr(gp.quicksum(x[i,j,t] for i in range(N) for j in range(N)) == m[t])           # c4
     
     model.addConstr(gp.quicksum(x[i,i,t] for i in range(N)) == 0)                                # c4
 
@@ -58,6 +61,14 @@ for j in range(N):
     model.addConstr(gp.quicksum(x[i,j,t] for t in range(1,T) for i in range(N)) == 1)          # c6
 
 model.addConstr(battery[0] == drone_capa)
+
+# TSP 문제를 해결하는 제약 조건
+# for i in range(N):
+#     model.addConstr(gp.quicksum(x[i, j, t] for t in range(1, T) for j in range(N)) == 1)  # 각 노드는 정확히 한 번 방문해야 함
+
+# for t in range(1, T):
+#     for j in range(N):
+#         model.addConstr(gp.quicksum(x[i, j, t] for i in range(N)) == gp.quicksum(x[j, k, t-1] for k in range(N)))  # 이동한 노드는 이전 시간대의 이동한 노드와 동일해야 함
 
 # 모델 최적화
 model.optimize()
